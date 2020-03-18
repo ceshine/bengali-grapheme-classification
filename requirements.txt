@@ -1,0 +1,5 @@
+pandas
+scipy
+pyarrow
+typer
+fire
