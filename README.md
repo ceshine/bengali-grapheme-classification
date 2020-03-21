@@ -38,6 +38,8 @@ Example command:
 python -m bengali.train --batch-size 64 --arch b4 --checkpoint-interval 2000 --steps 20010 --train-folder "gs://ceshine-tpu-us-central/bengali/train_0/*" --valid-folder "gs://ceshine-tpu-us-central/bengali/valid_0/*" --resize 192,330 --max-lr 4e-3 --mixup-alpha -1 --cutmix-alpha 1. --weight-decay 0 --log-interval 500 --mixed-precision --output-suffix _192330_0 --radam
 ```
 
+The above command should take 2 to 3 hours on a TPUv3 device.
+
 ## Inference
 
 Example command:
