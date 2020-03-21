@@ -1,6 +1,6 @@
 from glob import glob
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 import fire
 import numpy as np
@@ -52,15 +52,53 @@ def get_dataset(df, batch_size, resize: Optional[Tuple[int, int]] = None):
     return dataset
 
 
-def extract_predictions(output_array):
+def extract_predictions(output_array: np.ndarray, reweight_matrices: Optional[List[np.matrix]] = None):
     tmp = []
     for i in range(3):
-        tmp.append(tf.argmax(
-            output_array[:, SPLIT_POINT[i]:SPLIT_POINT[i+1]],
-            axis=1
-        ))
-    tmp = tf.stack(tmp, axis=1)
-    return tf.reshape(tmp, [-1])
+        if reweight_matrices:
+            tmp.append(np.argmax(
+                output_array[:, SPLIT_POINT[i]:SPLIT_POINT[i+1]].dot(
+                    reweight_matrices[i]
+                ),
+                axis=1
+            ))
+        else:
+            tmp.append(np.argmax(
+                output_array[:, SPLIT_POINT[i]:SPLIT_POINT[i+1]],
+                axis=1
+            ))
+    tmp = np.stack(tmp, axis=1)
+    return tmp
+
+
+def reweight_and_extract_predictions(probs):
+    """Reference: https://www.kaggle.com/c/bengaliai-cv19/discussion/136021"""
+    predictions = extract_predictions(probs)
+    p0, p1, p2 = predictions[:, 0], predictions[:, 1], predictions[:, 2]
+    EXP = -1.2
+
+    s = pd.Series(p0)
+    vc = s.value_counts().sort_index()
+    df = pd.DataFrame({'a': np.arange(168), 'b': np.ones(168)})
+    df.b = df.a.map(vc)
+    df.fillna(df.b.min(), inplace=True)
+    mat1 = np.diag(df.b.astype('float32')**EXP)
+
+    s = pd.Series(p1)
+    vc = s.value_counts().sort_index()
+    df = pd.DataFrame({'a': np.arange(11), 'b': np.ones(11)})
+    df.b = df.a.map(vc)
+    df.fillna(df.b.min(), inplace=True)
+    mat2 = np.diag(df.b.astype('float32')**EXP)
+
+    s = pd.Series(p2)
+    vc = s.value_counts().sort_index()
+    df = pd.DataFrame({'a': np.arange(7), 'b': np.ones(7)})
+    df.b = df.a.map(vc)
+    df.fillna(df.b.min(), inplace=True)
+    mat3 = np.diag(df.b.astype('float32')**EXP)
+
+    return extract_predictions(probs, [mat1, mat2, mat3])
 
 
 @tf.function
@@ -77,7 +115,7 @@ def ensemble_predictions(input_images, models, method="arithmetic"):
         results = tf.reduce_mean(stacked, axis=0)
     else:
         raise ValueError("averaging method unknown!")
-    return extract_predictions(results)
+    return results
 
 
 def main(
@@ -85,7 +123,8 @@ def main(
     parquet_pattern: str = "data/test_image_data_*.parquet",
     batch_size: int = 128,
     resize: Optional[Tuple[int, int]] = None,
-    method: str = "arithmetic"
+    method: str = "arithmetic",
+    reweight: bool = False
 ):
     models = []
     for model_path in model_paths.split(","):
@@ -98,7 +137,7 @@ def main(
         )
         model.load_weights(model_path)
         models.append(model)
-    predictions, ids = [], []
+    probs, ids = [], []
     for parquet_file in glob(parquet_pattern):
         print(f"Reading {parquet_file}")
         df = pd.read_parquet(parquet_file)
@@ -111,11 +150,15 @@ def main(
             ])
         del df
         for images in dataset:
-            predictions.append(ensemble_predictions(
+            probs.append(ensemble_predictions(
                 images, models, method).numpy())
         del dataset
     del models
-    predictions = np.concatenate(predictions)
+    probs = np.concatenate(probs)
+    if reweight:
+        predictions = reweight_and_extract_predictions(probs).reshape(-1)
+    else:
+        predictions = extract_predictions(probs).reshape(-1)
     df_sub = pd.DataFrame({
         'row_id': ids,
         'target': predictions
