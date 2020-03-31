@@ -60,3 +60,7 @@ Simply set the `--reweight` flag in the inference command. Here's what happens a
 ![comparison](imgs/comparison.png)
 
 This boost the ensemble model from 73th place to 6th place in the private learder board. Too bad I did not think of it during the competition.
+
+## Acknowledgements
+
+The TPU resources used in the project is generously sponsored by [TensorFlow Research Cloud](https://www.tensorflow.org/tfrc).
